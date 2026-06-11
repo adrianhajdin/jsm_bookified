@@ -143,7 +143,58 @@ GOOGLE_GEMINI_API_KEY=
 
 # ELEVENLABS
 ELEVENLABS_API_KEY=
+
+# 60db (alternative voice provider) — see https://docs.60db.ai
+# Set NEXT_PUBLIC_VOICE_PROVIDER=60db to route all voice calls through 60db
+# instead of Vapi. Leave unset (or set to "vapi") to keep the original path.
+NEXT_PUBLIC_VOICE_PROVIDER=
+SIXTYDB_API_KEY=
+SIXTYDB_API_BASE=https://api.60db.ai
+NEXT_PUBLIC_SIXTYDB_LLM_MODEL=60db-tiny
+NEXT_PUBLIC_SIXTYDB_DEFAULT_VOICE_ID=
 ```
+
+## 60db Provider (alongside Vapi)
+
+This repo ships a parallel **60db** voice path so the same UI can run on either
+backend. Set `NEXT_PUBLIC_VOICE_PROVIDER=60db` and the app will route the call
+through 60db's STT WebSocket + LLM chat completions + TTS WebSocket instead of
+Vapi.
+
+| File | Role |
+|---|---|
+| `hooks/useSixtyDb.ts` | Drop-in shape match for `useVapi` — same `{ status, messages, currentMessage, start, stop, ... }` surface |
+| `lib/sixtydb/agent.ts` | Per-turn orchestrator: STT → LLM (with `searchBook` tool) → TTS, plus retrieval fallback |
+| `lib/sixtydb/chat-client.ts` | `POST /v1/chat/completions` (model `60db-tiny`) with OpenAI-compatible `tool` pass-through |
+| `lib/sixtydb/stt-socket.ts` | `wss://api.60db.ai/ws/stt` browser-mode (linear PCM 16k) |
+| `lib/sixtydb/tts-socket.ts` | `wss://api.60db.ai/ws/tts` (LINEAR16 24k) |
+| `lib/sixtydb/audio-pipeline.ts` | Mic capture (48k Float32 → 16k Int16) and Web Audio playback |
+| `app/api/sixtydb/key/route.ts` | Clerk-gated server route returning the long-lived API key to the browser (60db has no token-mint endpoint yet) |
+| `app/api/sixtydb/discovery/route.ts` | Server proxy for `/default-voices`, `/my-voices`, `/tts/models`, `/stt/models` |
+
+**RAG flow** (matches Vapi's tool-call shape):
+1. Every LLM turn defines a `searchBook` tool referencing the current book id.
+2. If the model emits a tool call → run `searchBookSegments` (Mongo `$text`), feed
+   the result back, re-call the model.
+3. If the model didn't call the tool but the user clearly asked a content
+   question and the reply looks evasive → inject the top-3 segments and retry.
+
+**Security:** `/api/sixtydb/key` ships the long-lived `SIXTYDB_API_KEY` to the
+browser (gated by Clerk auth). When 60db exposes a token-mint endpoint, swap
+this for a short-lived token.
+
+**Activation diff:**
+
+```env
+- NEXT_PUBLIC_VOICE_PROVIDER=
++ NEXT_PUBLIC_VOICE_PROVIDER=60db
++ SIXTYDB_API_KEY=sk_live_...
+```
+
+No code changes — `components/VapiControls.tsx` picks the hook from
+`VOICE_PROVIDER` at module init, and `components/VoiceSelector.tsx` fetches the
+60db voice catalog at runtime via the discovery proxy.
+
 
 Replace the placeholder values with your real credentials. You can get these by signing up at: [**Clerk**](https://clerk.com), [**Vercel**](https://vercel.com), [**MongoDB**](https://www.mongodb.com), [**Vapi**](https://vapi.ai), [**Google AI Studio**](https://aistudio.google.com), [**ElevenLabs**](https://elevenlabs.io).
 

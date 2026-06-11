@@ -2,6 +2,8 @@
 
 import {Mic, MicOff} from "lucide-react";
 import useVapi from "@/hooks/useVapi";
+import useSixtyDb from "@/hooks/useSixtyDb";
+import { VOICE_PROVIDER } from "@/lib/constants";
 import {IBook} from "@/types";
 import Image from "next/image";
 import Transcript from "@/components/Transcript";
@@ -10,8 +12,13 @@ import {toast} from "sonner";
 import {useRouter} from "next/navigation";
 import {useEffect} from "react";
 
+// Pick the agent transport at module init — env-level decision, never
+// flips at runtime. The two hooks expose the same shape so the rest of
+// this component is provider-agnostic.
+const useVoiceAgent = VOICE_PROVIDER === '60db' ? useSixtyDb : useVapi;
+
 const VapiControls = ({ book }: { book: IBook }) => {
-    const { status, isActive, messages, currentMessage, currentUserMessage, duration, start, stop, clearError, limitError, isBillingError, maxDurationSeconds } = useVapi(book)
+    const { status, isActive, messages, currentMessage, currentUserMessage, duration, start, stop, clearError, limitError, isBillingError, maxDurationSeconds } = useVoiceAgent(book)
     const router = useRouter();
 
     useEffect(() => {

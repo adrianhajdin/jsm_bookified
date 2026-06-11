@@ -125,6 +125,82 @@ export const VOICE_SETTINGS = {
     speed: 1.0, // Natural conversation speed
 };
 
+// =====================================================================
+// 60db provider (alternative to Vapi) — see https://docs.60db.ai
+// Activated by env: NEXT_PUBLIC_VOICE_PROVIDER === '60db'
+// =====================================================================
+
+export const VOICE_PROVIDER =
+    (process.env.NEXT_PUBLIC_VOICE_PROVIDER === '60db' ? '60db' : 'vapi') as
+        | 'vapi'
+        | '60db';
+
+// 60db's LLM model id — docs.60db.ai/api-reference/chat-completions
+export const SIXTYDB_LLM_MODEL = process.env.NEXT_PUBLIC_SIXTYDB_LLM_MODEL || '60db-tiny';
+
+// Fallback voice when the book has no persona set. Replace with any id
+// returned by GET /default-voices.
+export const SIXTYDB_DEFAULT_VOICE_ID =
+    process.env.NEXT_PUBLIC_SIXTYDB_DEFAULT_VOICE_ID || 'fbb75ed2-975a-40c7-9e06-38e30524a9a1';
+
+// Cap for the soft retrieval-fallback heuristic: when the LLM doesn't
+// emit a tool call but the user asked a content question, inject the
+// top-N book segments and retry.
+export const SIXTYDB_RAG_FALLBACK_TOP_K = 3;
+
+// System prompt — mirrors the JSM tutorial vibe from the Vapi assistant
+// (warm, conversational, tool-calling first). Template-renders title/author.
+export const SIXTYDB_SYSTEM_PROMPT = (book: {
+    title: string;
+    author: string;
+    _id: string;
+}) => `You are a warm, casual book companion having a real-time voice
+conversation about "${book.title}" by ${book.author}.
+
+Voice etiquette:
+- Keep replies under 3 short sentences unless the user explicitly asks
+  for depth. This is a voice call, not a chat window.
+- Sound human: contractions, occasional hedges ("I think", "feels like"),
+  no markdown, no bullet points, no headings.
+
+Knowledge etiquette:
+- Whenever the user asks about specific passages, characters, quotes,
+  chapters, or anything content-specific, call the searchBook tool
+  with a tight 4-6 word query. The book id for this session is
+  "${book._id}". Pass it as bookId.
+- After receiving searchBook results, paraphrase — don't read them
+  verbatim. If the results don't cover the question, say so plainly.
+- For broad questions ("what's the main idea?") you may answer from the
+  context already in the conversation without calling the tool.
+
+You can ask clarifying questions. You should not lecture.`;
+
+// Tool definition shared between every LLM turn. OpenAI-compatible
+// schema — 60db accepts this in the `tool` field per docs.
+export const SIXTYDB_TOOLS = [
+    {
+        type: 'function' as const,
+        function: {
+            name: 'searchBook',
+            description: 'Search the uploaded book\'s text for passages relevant to the user\'s question. Returns the top matching segments.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    bookId: {
+                        type: 'string',
+                        description: 'The book id provided in the system prompt for this session.',
+                    },
+                    query: {
+                        type: 'string',
+                        description: 'A short keyword phrase (4-6 words) describing what to look for.',
+                    },
+                },
+                required: ['bookId', 'query'],
+            },
+        },
+    },
+];
+
 // VAPI configuration for natural conversation
 // NOTE: These settings should be configured in the VAPI Dashboard for the assistant
 // They are kept here for reference and documentation purposes
